@@ -12,7 +12,7 @@ from flask_sock import Sock
 app = Flask(__name__)
 CORS(app)
 sock = Sock(app)
-load_dotenv()  # Load .env for local testing
+load_dotenv()
 
 @app.route('/')
 def health_check():
@@ -33,30 +33,32 @@ except Exception as e:
 # --- Google Cloud Speech Client Setup ---
 speech_client = None
 try:
-    google_creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
-    if google_creds_json_str:
-        creds_info = json.loads(google_creds_json_str)
-        credentials = service_account.Credentials.from_service_account_info(creds_info)
+    if creds_json_str:
+        creds_dict = json.loads(creds_json_str)
+        credentials = service_account.Credentials.from_service_account_info(creds_dict)
         speech_client = speech.SpeechClient(credentials=credentials)
         print("✅ Google Speech Client configured from GOOGLE_CREDENTIALS_JSON.")
+    
     elif os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-        credentials = service_account.Credentials.from_service_account_file(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+        credentials = service_account.Credentials.from_service_account_file(
+            os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        )
         speech_client = speech.SpeechClient(credentials=credentials)
         print("✅ Google Speech Client configured from GOOGLE_APPLICATION_CREDENTIALS path.")
-
+    
     else:
-        print("⚠️  WARNING: No Google Cloud credentials found. STT will fail.")
+        print("⚠️ No Google credentials found. STT will not work.")
 except Exception as e:
     print(f"❌ FATAL: Error configuring Google Cloud Speech client: {e}")
-    speech_client = None
 
-# --- Gemini Text Extraction ---
+# --- Gemini Extraction Logic ---
 def get_gemini_extraction(transcript, source_lang):
     if not gemini_model:
         return {"error": "Gemini model not configured."}
     if not transcript.strip():
-        return {"error": "Cannot process empty transcript."}
+        return {"error": "Empty transcript."}
 
     source_language_full_name = "English" if source_lang == "en" else "Malayalam"
 
@@ -82,37 +84,39 @@ def get_gemini_extraction(transcript, source_lang):
       "source_language": "{source_lang}"
     }}
 
-    Important Rules:
-    - Always output valid JSON. The "source_language" in the JSON must be "{source_lang}".
-    - Extract ALL medical terms you can find. If a category is empty, use an empty array [].
+    Rules:
+    - Output valid JSON only.
+    - Use empty arrays if a category has no data.
+    - Always include 'source_language': "{source_lang}"
     """
+
     try:
         response = gemini_model.generate_content(smart_prompt)
-        cleaned_json = response.text.strip().replace("```json", "").replace("```", "").strip()
-        result = json.loads(cleaned_json)
-        result["source_language"] = source_lang
+        cleaned = response.text.strip().replace("```json", "").replace("```", "").strip()
+        result = json.loads(cleaned)
         if "extracted_terms" not in result:
             result["extracted_terms"] = {}
+        result["source_language"] = source_lang
         return result
     except Exception as e:
         print(f"❌ Gemini processing error: {e}")
         return {
-            "error": "Failed to process text with Gemini.",
+            "error": "Gemini failed to process input.",
             "details": str(e),
             "final_english_text": transcript,
             "extracted_terms": {},
             "source_language": source_lang
         }
 
-# --- WebSocket for Live Transcription ---
+# --- WebSocket Speech Handler ---
 @sock.route('/speech/<lang_code>')
 def speech_socket(ws, lang_code):
     if not speech_client:
-        print("🔴 Speech client not available. Closing connection.")
+        print("🔴 No speech client available.")
         ws.close(reason=1011, message="Speech client not configured.")
         return
 
-    print(f"🟢 Client connected with language: {lang_code}")
+    print(f"🟢 WebSocket connected: {lang_code}")
 
     model_config = {
         'ml': {"language_code": "ml-IN", "model": "latest_long"},
@@ -136,8 +140,8 @@ def speech_socket(ws, lang_code):
                     break
                 if isinstance(message, str):
                     data = json.loads(message)
-                    if data.get('type') == 'end_stream':
-                        print("🔁 End of stream signal received.")
+                    if data.get("type") == "end_stream":
+                        print("🔁 Stream ended by client.")
                         break
                 else:
                     yield speech.StreamingRecognizeRequest(audio_content=message)
@@ -158,7 +162,11 @@ def speech_socket(ws, lang_code):
                 continue
             result = response.results[0]
             transcript = result.alternatives[0].transcript
-            ws.send(json.dumps({ "type": "transcript", "is_final": result.is_final, "text": transcript }))
+            ws.send(json.dumps({
+                "type": "transcript",
+                "is_final": result.is_final,
+                "text": transcript
+            }))
             if result.is_final:
                 final_transcript += transcript + " "
 
@@ -169,17 +177,17 @@ def speech_socket(ws, lang_code):
     except Exception as e:
         print(f"❌ Streaming error: {e}")
         try:
-            ws.send(json.dumps({ "type": "error", "message": f"Streaming Error: {e}" }))
+            ws.send(json.dumps({ "type": "error", "message": str(e) }))
         except:
             pass
     finally:
-        print("🔴 Stream closed.")
+        print("🔴 WebSocket closed.")
         if ws.connected:
             try:
                 ws.close()
             except:
                 pass
 
-# --- Local Dev Entry Point ---
+# --- Local Dev Server ---
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
