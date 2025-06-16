@@ -188,6 +188,5 @@ def speech_socket(ws, lang_code):
             except:
                 pass
 
-# --- Local Dev Server ---
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
