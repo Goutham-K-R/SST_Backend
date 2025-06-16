@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from google.cloud import speech
 from flask_sock import Sock
+import gevent.monkey
+gevent.monkey.patch_all()
 # --- Basic Setup ---
 app = Flask(__name__)
 CORS(app)
