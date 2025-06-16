@@ -1,3 +1,7 @@
+# Apply gevent monkey-patching at the very top
+import gevent.monkey
+gevent.monkey.patch_all()
+
 import os
 import json
 from flask import Flask
@@ -7,6 +11,7 @@ import google.generativeai as genai
 from google.cloud import speech
 from google.oauth2 import service_account
 from flask_sock import Sock
+
 
 # --- App Setup ---
 app = Flask(__name__)
