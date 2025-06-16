@@ -18,19 +18,17 @@ load_dotenv()
 def health_check():
     return "OK", 200
 
-# --- Gemini Setup ---
 try:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY not found.")
     genai.configure(api_key=GEMINI_API_KEY)
     gemini_model = genai.GenerativeModel("gemini-1.5-flash-latest")
-    print("✅ Gemini Model configured successfully.")
+    print(" Gemini Model configured successfully.")
 except Exception as e:
-    print(f"❌ Error configuring Gemini: {e}")
+    print(f" Error configuring Gemini: {e}")
     gemini_model = None
 
-# --- Google Cloud Speech Client Setup ---
 speech_client = None
 try:
     creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
@@ -39,19 +37,19 @@ try:
         creds_dict = json.loads(creds_json_str)
         credentials = service_account.Credentials.from_service_account_info(creds_dict)
         speech_client = speech.SpeechClient(credentials=credentials)
-        print("✅ Google Speech Client configured from GOOGLE_CREDENTIALS_JSON.")
+        print(" Google Speech Client configured from GOOGLE_CREDENTIALS_JSON.")
     
     elif os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
         credentials = service_account.Credentials.from_service_account_file(
             os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         )
         speech_client = speech.SpeechClient(credentials=credentials)
-        print("✅ Google Speech Client configured from GOOGLE_APPLICATION_CREDENTIALS path.")
+        print(" Google Speech Client configured from GOOGLE_APPLICATION_CREDENTIALS path.")
     
     else:
-        print("⚠️ No Google credentials found. STT will not work.")
+        print(" No Google credentials found. STT will not work.")
 except Exception as e:
-    print(f"❌ FATAL: Error configuring Google Cloud Speech client: {e}")
+    print(f" FATAL: Error configuring Google Cloud Speech client: {e}")
 
 # --- Gemini Extraction Logic ---
 def get_gemini_extraction(transcript, source_lang):
@@ -99,7 +97,7 @@ def get_gemini_extraction(transcript, source_lang):
         result["source_language"] = source_lang
         return result
     except Exception as e:
-        print(f"❌ Gemini processing error: {e}")
+        print(f" Gemini processing error: {e}")
         return {
             "error": "Gemini failed to process input.",
             "details": str(e),
@@ -112,11 +110,11 @@ def get_gemini_extraction(transcript, source_lang):
 @sock.route('/speech/<lang_code>')
 def speech_socket(ws, lang_code):
     if not speech_client:
-        print("🔴 No speech client available.")
+        print(" No speech client available.")
         ws.close(reason=1011, message="Speech client not configured.")
         return
 
-    print(f"🟢 WebSocket connected: {lang_code}")
+    print(f" WebSocket connected: {lang_code}")
 
     model_config = {
         'ml': {"language_code": "ml-IN", "model": "latest_long"},
@@ -141,12 +139,12 @@ def speech_socket(ws, lang_code):
                 if isinstance(message, str):
                     data = json.loads(message)
                     if data.get("type") == "end_stream":
-                        print("🔁 Stream ended by client.")
+                        print(" Stream ended by client.")
                         break
                 else:
                     yield speech.StreamingRecognizeRequest(audio_content=message)
         except Exception as e:
-            print(f"⚠️ Generator error: {e}")
+            print(f" Generator error: {e}")
 
     try:
         responses = speech_client.streaming_recognize(
@@ -170,18 +168,18 @@ def speech_socket(ws, lang_code):
             if result.is_final:
                 final_transcript += transcript + " "
 
-        print(f"✅ Final Transcript: {final_transcript}")
+        print(f" Final Transcript: {final_transcript}")
         if final_transcript.strip():
             gemini_result = get_gemini_extraction(final_transcript, lang_code)
             ws.send(json.dumps({ "type": "entities", "data": gemini_result }))
     except Exception as e:
-        print(f"❌ Streaming error: {e}")
+        print(f" Streaming error: {e}")
         try:
             ws.send(json.dumps({ "type": "error", "message": str(e) }))
         except:
             pass
     finally:
-        print("🔴 WebSocket closed.")
+        print(" WebSocket closed.")
         if ws.connected:
             try:
                 ws.close()
