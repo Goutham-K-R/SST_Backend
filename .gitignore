@@ -1,11 +1,8 @@
-# Python
-__pycache__/
-*.pyc
-
-# Environment
+# Environment variables
 .env
+env/
 venv/
-.venv/
+__pycache__/
 
-# IDE
-.vscode/ 
+# Google Cloud Credentials
+*.json
