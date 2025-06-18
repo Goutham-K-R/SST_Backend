@@ -1,3 +1,2 @@
 #!/bin/bash
-chmod +x run.sh
-gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:$PORT app:app
+gunicorn --worker-class eventlet --workers 1 --bind 0.0.0.0:$PORT app:app
