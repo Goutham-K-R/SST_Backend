@@ -1,5 +1,6 @@
 import os
 import json
+import tempfile
 from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -31,7 +32,6 @@ try:
     
     if google_creds_json:
         # On Render, use the JSON string directly
-        import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(google_creds_json)
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = f.name
@@ -86,14 +86,18 @@ def get_gemini_extraction(transcript, source_lang):
         cleaned_json_string = response.text.strip().replace("```json", "").replace("```", "").strip()
         result = json.loads(cleaned_json_string)
         
-        if "extracted_terms" not in result: result["extracted_terms"] = {}
+        if "extracted_terms" not in result: 
+            result["extracted_terms"] = {}
         result["source_language"] = source_lang
         return result
     except Exception as e:
         print(f"❌ Gemini processing error: {e}")
         return {
-            "error": "Failed to process text with Gemini.", "details": str(e),
-            "final_english_text": transcript, "extracted_terms": {}, "source_language": source_lang
+            "error": "Failed to process text with Gemini.", 
+            "details": str(e),
+            "final_english_text": transcript, 
+            "extracted_terms": {}, 
+            "source_language": source_lang
         }
 
 @sock.route('/speech/<lang_code>')
@@ -126,7 +130,8 @@ def speech_socket(ws, lang_code):
         try:
             while True:
                 message = websocket.receive()
-                if message is None: break
+                if message is None: 
+                    break
                 if isinstance(message, str):
                     data = json.loads(message)
                     if data.get('type') == 'end_stream':
@@ -144,28 +149,62 @@ def speech_socket(ws, lang_code):
         )
         final_transcript = ""
         for response in responses:
-            if not ws.connected: break
-            if not response.results or not response.results[0].alternatives: continue
+            if not ws.connected: 
+                break
+            if not response.results or not response.results[0].alternatives: 
+                continue
             
             result = response.results[0]
             transcript = result.alternatives[0].transcript
             
-            ws.send(json.dumps({ "type": "transcript", "is_final": result.is_final, "text": transcript }))
-            if result.is_final: final_transcript += transcript + " "
+            ws.send(json.dumps({
+                "type": "transcript", 
+                "is_final": result.is_final, 
+                "text": transcript
+            }))
+            if result.is_final: 
+                final_transcript += transcript + " "
 
         print(f"✅ Final Transcript for Gemini: {final_transcript}")
         if final_transcript.strip():
             gemini_result = get_gemini_extraction(final_transcript, lang_code)
-            ws.send(json.dumps({ "type": "entities", "data": gemini_result }))
+            ws.send(json.dumps({
+                "type": "entities", 
+                "data": gemini_result
+            }))
     except Exception as e:
         print(f"❌ Error during streaming: {e}")
-        try: ws.send(json.dumps({ "type": "error", "message": f"Streaming Error: {e}" }))
-        except: pass
+        try: 
+            ws.send(json.dumps({
+                "type": "error", 
+                "message": f"Streaming Error: {e}"
+            }))
+        except: 
+            pass
     finally:
         print("🔴 Stream closed.")
         if ws.connected:
-            try: ws.close()
-            except: pass
+            try: 
+                ws.close()
+            except: 
+                pass
+
+@app.route('/')
+def health_check():
+    return {
+        "status": "SST Backend is running",
+        "service": "Speech-to-Text WebSocket API",
+        "endpoints": {
+            "websocket": "/speech/<lang_code>",
+            "supported_languages": ["en", "ml"]
+        },
+        "gemini_configured": gemini_model is not None,
+        "speech_client_configured": speech_client is not None
+    }
+
+@app.route('/health')
+def health():
+    return {"status": "healthy"}
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
