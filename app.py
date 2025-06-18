@@ -6,11 +6,11 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from google.cloud import speech
 from flask_sock import Sock
+
 # --- Basic Setup ---
 app = Flask(__name__)
 CORS(app)
 load_dotenv()
-
 
 sock = Sock(app)
 
@@ -24,9 +24,23 @@ except Exception as e:
     print(f"❌ Error configuring Gemini: {e}")
     gemini_model = None
 
+# Google Cloud Speech Client Configuration for Render
 try:
-    speech_client = speech.SpeechClient()
-    print("✅ Google Cloud Speech-to-Text client configured successfully.")
+    # Check if we're on Render (environment variable approach)
+    google_creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    
+    if google_creds_json:
+        # On Render, use the JSON string directly
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(google_creds_json)
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = f.name
+        speech_client = speech.SpeechClient()
+        print("✅ Google Cloud Speech-to-Text client configured successfully (from JSON string).")
+    else:
+        # Local development with file path
+        speech_client = speech.SpeechClient()
+        print("✅ Google Cloud Speech-to-Text client configured successfully (from file).")
 except Exception as e:
     print(f"❌ Error configuring Google Cloud Speech client: {e}")
     speech_client = None
@@ -154,4 +168,5 @@ def speech_socket(ws, lang_code):
             except: pass
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
